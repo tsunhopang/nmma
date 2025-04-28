@@ -564,27 +564,83 @@ class GRBLightCurveModel(LightCurveMixin):
             grb_param_dict["E0"] = 10 ** new_parameters["log10_E0"]
         else:
             # additional parameters
-            energy_injection_params = [
-                "energy_exponential",
-                "log10_Eend",
-                "t_start",
-                "injection_duration",
+            energy_exponential_names = sorted([
+                key for key in new_parameters
+                if key.startswith('energy_exponential')
+            ])
+            log10_Eend_names = sorted([
+                key for key in new_parameters
+                if key.startswith('log10_Eend')
+            ])
+            t_start_names = sorted([
+                key for key in new_parameters
+                if key.startswith('t_start')
+            ])
+            injection_duration_names = sorted([
+                key for key in new_parameters
+                if key.startswith('injection_duration')
+            ])
+            lists = [
+                energy_exponential_names, log10_Eend_names,
+                t_start_names, injection_duration_names
             ]
-            assert all(key in new_parameters for key in energy_injection_params)
+            lengths = [len(lst) for lst in lists]
+            assert (
+                all(length == lengths[0] for length in lengths)
+                and lengths[0] >= 1
+            ), "Parameter missing for the GRB energy injection model"
             # fetch parameters
-            log10_Eend = new_parameters["log10_Eend"]
-            t_start = new_parameters["t_start"]
-            t_end = new_parameters["t_start"] + new_parameters["injection_duration"]
-            energy_exponential = new_parameters["energy_exponential"]
+            energy_exponentials = np.array([
+                new_parameters[key] for key in energy_exponential_names
+            ])
+            log10_Eends = np.array([
+                new_parameters[key] for key in log10_Eend_names
+            ])
+            t_starts = np.array([
+                new_parameters[key] for key in t_start_names
+            ])
+            injection_durations = np.array([
+                new_parameters[key] for key in injection_duration_names
+            ])
+            # construct additional parameters
+            t_ends = t_starts + injection_durations
+            # the Estart defined by the first energy injection epoach
+            # for the rest of the epochs, the Estart is the Eend of the previous one
+            log10_Estart_0 = (
+                log10_Eends[0]
+                + energy_exponentials[0] * np.log10(t_starts[0] / t_ends[0])
+            )
+            log10_Estarts = np.concatenate((
+                [log10_Estart_0],
+                log10_Eends[:-1]
+            ))
             # populate the E0 along the sample_times
-            log10_Estart = log10_Eend + energy_exponential * np.log10(t_start / t_end)
-            log10_E0 = log10_Eend * np.ones(len(sample_times))
+            log10_E0 = np.zeros(len(sample_times))
             # now adjust the log10_E0
-            log10_E0[sample_times <= t_start] = log10_Estart
-            log10_E0[sample_times >= t_end] = log10_Eend
-            mask = (sample_times > t_start) * (sample_times < t_end)
-            time_scale = np.log10(sample_times / t_end)
-            log10_E0[mask] = log10_Eend + energy_exponential * time_scale[mask]
+            for t_start, t_end, log10_Estart, log10_Eend, exp in zip(
+                t_starts, t_ends, log10_Estarts, log10_Eends, energy_exponentials
+            ):
+                # Before t_start (set to E_start if it's not already set)
+                log10_E0[sample_times <= t_start] = np.where(
+                    log10_E0[sample_times <= t_start] == 0,
+                    log10_Estart,
+                    log10_E0[sample_times <= t_start]
+                )
+                # After t_end (set to E_end if it's not already set)
+                log10_E0[sample_times >= t_end] = np.where(
+                    log10_E0[sample_times >= t_end] == 0,
+                    log10_Eend,
+                    log10_E0[sample_times >= t_end]
+                )
+                # Between t_start and t_end
+                # apply exponential formula if it's not already set
+                mask = (sample_times > t_start) & (sample_times < t_end)
+                time_scale = np.log10(sample_times[mask] / t_end)
+                log10_E0[mask] = np.where(
+                    log10_E0[mask] == 0,
+                    log10_Eend + exp * time_scale,
+                    log10_E0[mask]
+                )
             # now place the array into the param_dict
             grb_param_dict["E0"] = 10**log10_E0
         # make sure L0, q and ts are also passed
@@ -1089,13 +1145,13 @@ class SimpleKilonovaLightCurveModel(LightCurveMixin):
             vej_max = param_dict["vej_max"]
             vej_min = param_dict["vej_min"]
             vej_range = vej_max - vej_min
-            vej = param_dict["vej_frac"] * vej_range + vej_min 
+            vej = param_dict["vej_frac"] * vej_range + vej_min
             # calculate the temperature and luminosity to feed into the blackbody radiation calculation
             L, T, _ = utils.lightcurve_HoNa(
                 sample_times,
                 10**param_dict["log10_Mej"],
                 [param_dict["vej_min"], vej, param_dict["vej_max"]],
-                [10**param_dict["log10_kappa_low_vej"], 
+                [10**param_dict["log10_kappa_low_vej"],
                  10**param_dict["log10_kappa_high_vej"]],
                 param_dict["n"]
             )
