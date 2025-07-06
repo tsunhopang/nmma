@@ -1899,63 +1899,57 @@ def lightcurve_HoNa(t, mass, velocities, opacities, n):
     return L, T, r.to(astropy.units.cm)
 
 
-def cooling_envelope(time_days, mbh_msun, stellar_mass, eta, alpha, beta, **kwargs):
+def cooling_envelope(time_days, param_dict):
     """
-    :param mbh_msun: mass of supermassive black hole in units of solar mass
-    :param stellar_mass: stellar mass in units of solar masses
-    :param eta: SMBH feedback efficiency (typical range: etamin - 0.1)
-    :param alpha: disk viscosity
-    :param beta: TDE penetration factor (typical range: 1 - beta_max)
-    :param time_days: time array in days for interpolation
-    :param kwargs:
-    :return: bolometric luminosity (erg/s), photosphere temperature (K), photosphere radius (cm)
+    time_days: time array in days for interpolation
+    param_dict: dictionary of parameters
+        mbh_msun: mass of supermassive black hole in units of solar mass
+        stellar_mass: stellar mass in units of solar masses
+        eta: SMBH feedback efficiency (typical range: etamin - 0.1)
+        alpha: disk viscosity
+        beta: TDE penetration factor (typical range: 1 - beta_max)
+    return: bolometric luminosity (erg/s), photosphere temperature (K), photosphere radius (cm)
     """
-	# fetching kwargs and using default value if not provided
-    t_0_init = kwargs.get('t_0_init', 1.0)
-    binding_energy_const = kwargs.get('binding_energy_const', 0.8)
-    zeta = kwargs.get('zeta', 2.0)
-    hoverR = kwargs.get('hoverR', 0.3)
-	# getting all the constants needed
+    # fetching parameters and using default value if not provided
+    mbh_msun = param_dict["mbh_msun"]
+    stellar_mass = param_dict["stellar_mass"]
+    eta = param_dict["eta"]
+    alpha = param_dict["alpha"]
+    beta = param_dict["beta"]
+    t_0_init = param_dict.get('t_0_init', 1.0)
+    binding_energy_const = param_dict.get('binding_energy_const', 0.8)
+    zeta = param_dict.get('zeta', 2.0)
+    hoverR = param_dict.get('hoverR', 0.3)
+    # getting all the constants needed
     G = astropy.constants.G
     M_sun = astropy.constants.M_sun
     R_sun = astropy.constants.R_sun
     c = astropy.constants.c
     sigma_sb = astropy.constants.sigma_sb
     # getting all the units needed
-	cm = astropy.units.cm
-	g = astropy.units.g
-	s = astropy.units.s
-	K = astropy.units.K
-	erg = astropy.units.erg
-	day = astropy.units.day
+    cm = astropy.units.cm
+    g = astropy.units.g
+    s = astropy.units.s
+    K = astropy.units.K
+    erg = astropy.units.erg
+    day = astropy.units.day
     # Convert to 10^6 solar masses for internal calculations
     mbh_6 = mbh_msun / 1.0e6
-
-    # gravitational radius
-    Rg = (G * mbh_msun * M_sun / c**2).to(cm).value
-    
     # stellar mass in cgs
     Mstar = (stellar_mass * M_sun).to(g).value
-    
     # stellar radius in cgs
     Rstar = (stellar_mass**0.8 * R_sun).to(cm).value
-    
     # tidal radius
-    Rt = Rstar * (mbh_msun / stellar_mass)**(1./3.)
-    
+    Rt = Rstar * (mbh_msun / stellar_mass)**(1. / 3.)
     # circularization radius
     Rcirc = 2.0 * Rt / beta
-    
-    # fall-back time of most tightly bound debris (calc_tfb integrated)
+    # fall-back time of most tightly bound debris
     tfb = 58. * (3600. * 24.) * (mbh_6 ** (0.5)) * (stellar_mass ** (0.2)) * ((binding_energy_const / 0.8) ** (-1.5))
-    
     # Eddington luminosity of SMBH in units of 1e40 erg/s
     Ledd40 = 1.4e4 * mbh_6
-    
     # Convert day to seconds
     day_to_s = (1 * day).to(s).value
-    
-    time_temp = np.logspace(np.log10(1.0*tfb), np.log10(5000*tfb), 5000)
+    time_temp = np.logspace(np.log10(1.0 * tfb), np.log10(5000 * tfb), 5000)
     tdays = time_temp / day_to_s
 
     # Set up grids
@@ -1971,39 +1965,36 @@ def cooling_envelope(time_days, mbh_msun, stellar_mass, eta, alpha, beta, **kwar
     Teff = np.empty_like(tdays)
     Lrad = np.empty_like(tdays)
 
-    Mdotfb = (0.8 * Mstar / (3.0 * tfb)) * (time_temp / tfb)**(-5./3.)
-
+    Mdotfb = (0.8 * Mstar / (3.0 * tfb)) * (time_temp / tfb)**(-5. / 3.)
     # ** initialize grid quantities at t = t_0_init [grid point 0] **
-    Me[0] = 0.1 * Mstar + (0.4 * Mstar) * (1.0 - t_0_init**(-2./3.))
-    Rv[0] = (2. * Rt**(2.0)/(5.0 * binding_energy_const * Rstar)) * (Me[0]/Mstar)
-    Ee40[0] = ((2.0 * G.to(cm**3/g/s**2).value * mbh_msun * M_sun.to(g).value * Me[0]) / (5.0 * Rv[0])) * 2.0e-7
+    Me[0] = 0.1 * Mstar + (0.4 * Mstar) * (1.0 - t_0_init**(-2. / 3.))
+    Rv[0] = (2. * Rt**(2.0) / (5.0 * binding_energy_const * Rstar)) * (Me[0] / Mstar)
+    Ee40[0] = ((2.0 * G.to(cm**3 / g / s**2).value * mbh_msun * M_sun.to(g).value * Me[0]) / (5.0 * Rv[0])) * 2.0e-7
     Lamb = 0.38 * Me[0] / (10.0 * np.pi * Rv[0]**2.0)
     Rph[0] = Rv[0] * (1.0 + np.log(Lamb))
     Racc[0] = zeta * Rv[0]
-    Edotfb40[0] = (G.to(cm**3/g/s**2).value * mbh_msun * M_sun.to(g).value * Mdotfb[0]/Racc[0]) * (2.0e-7)
+    Edotfb40[0] = (G.to(cm**3 / g / s**2).value * mbh_msun * M_sun.to(g).value * Mdotfb[0] / Racc[0]) * (2.0e-7)
     Lrad[0] = Ledd40 + Edotfb40[0]
-    tacc[0] = 2.2e-17 * (10. / (3. * alpha)) * (Rv[0]**2.0) / (G.to(cm**3/g/s**2).value * mbh_msun * M_sun.to(g).value * Rcirc)**0.5 * (hoverR)**(-2.0)
+    tacc[0] = 2.2e-17 * (10. / (3. * alpha)) * (Rv[0]**2.0) / (G.to(cm**3 / g / s**2).value * mbh_msun * M_sun.to(g).value * Rcirc)**0.5 * (hoverR)**(-2.0)
     MdotBH[0] = (Me[0] / tacc[0])
-    Edotbh40[0] = eta * c.to(cm/s).value**2.0 * (Me[0] / tacc[0]) * (1.0e-40)
-    Teff[0] = 1.0e10 * ((Ledd40 + Edotfb40[0]) / (4.0 * np.pi * sigma_sb.to(erg/cm**2/s/K**4).value * Rph[0]**2.0))**0.25
+    Edotbh40[0] = eta * c.to(cm / s).value**2.0 * (Me[0] / tacc[0]) * (1.0e-40)
+    Teff[0] = 1.0e10 * ((Ledd40 + Edotfb40[0]) / (4.0 * np.pi * sigma_sb.to(erg / cm**2 / s / K**4).value * Rph[0]**2.0))**0.25
 
     # Pre-compute constants for vectorized operations
-    G_cgs = G.to(cm**3/g/s**2).value
+    G_cgs = G.to(cm**3 / g / s**2).value
     M_sun_cgs = M_sun.to(g).value
-    c_cgs = c.to(cm/s).value
-    sigma_sb_cgs = sigma_sb.to(erg/cm**2/s/K**4).value
-    
+    c_cgs = c.to(cm / s).value
+    sigma_sb_cgs = sigma_sb.to(erg / cm**2 / s / K**4).value
     # Time differences for integration
     dt = np.diff(time_temp)
-    
     # Main evolution loop
     for ii in range(1, len(time_temp)):
-        Me[ii] = Me[ii - 1] - (MdotBH[ii - 1] - Mdotfb[ii - 1]) * dt[ii-1]
-        Ee40[ii] = Ee40[ii - 1] + (Ledd40 - Edotbh40[ii - 1]) * dt[ii-1]
+        Me[ii] = Me[ii - 1] - (MdotBH[ii - 1] - Mdotfb[ii - 1]) * dt[ii - 1]
+        Ee40[ii] = Ee40[ii - 1] + (Ledd40 - Edotbh40[ii - 1]) * dt[ii - 1]
         Rv[ii] = ((2.0 * G_cgs * mbh_msun * M_sun_cgs * Me[ii]) / (5.0 * Ee40[ii])) * (2.0e-7)
         Lamb = 0.38 * Me[ii] / (10.0 * np.pi * Rv[ii]**2.0)
         Rph[ii] = Rv[ii] * (1.0 + np.log(Lamb))
-        Racc[ii] = zeta * Rv[0] * (time_temp[ii] / tfb)**(2./3.)
+        Racc[ii] = zeta * Rv[0] * (time_temp[ii] / tfb)**(2. / 3.)
         Edotfb40[ii] = (G_cgs * mbh_msun * M_sun_cgs * Mdotfb[ii] / Racc[ii]) * (2.0e-7)
         Lrad[ii] = Ledd40 + Edotfb40[ii]
         Teff[ii] = 1.0e10 * ((Ledd40 + Edotfb40[ii]) / (4.0 * np.pi * sigma_sb_cgs * Rph[ii]**2.0))**0.25
@@ -2013,8 +2004,8 @@ def cooling_envelope(time_days, mbh_msun, stellar_mass, eta, alpha, beta, **kwar
 
     # Find termination constraints
     try:
-        constraint_1 = np.min(np.where(Rv < Rcirc/2.))
-        constraint_2 = np.min(np.where(Me < 0.0))
+        constraint_1 = np.min(np.where(Rv < Rcirc / 2.))
+        constraint_2 = np.min(np.where(Me < 0.))
     except ValueError:
         constraint_1 = len(time_temp)
         constraint_2 = len(time_temp)
@@ -2026,11 +2017,52 @@ def cooling_envelope(time_days, mbh_msun, stellar_mass, eta, alpha, beta, **kwar
     Teff_valid = Teff[:constraint]
     Rph_valid = Rph[:constraint]
 
-	# also truncate time_days to valid range
+    # also truncate time_days to valid range
     time_days = np.asarray(time_days)
-	time_days = time_days[(time_days <= tdays_valid[-1]) * (time_days >= tdays_valid[0])]
-    Lrad_interp = interp1d(time_days, tdays_valid, Lrad_valid)
-    Teff_interp = interp1d(time_days, tdays_valid, Teff_valid)
-    Rph_interp = interp1d(time_days, tdays_valid, Rph_valid)
-    
+    time_days = time_days[(time_days <= tdays_valid[-1]) * (time_days >= tdays_valid[0])]
+    Lrad_interp = np.interp(time_days, tdays_valid, Lrad_valid)
+    Teff_interp = np.interp(time_days, tdays_valid, Teff_valid)
+    Rph_interp = np.interp(time_days, tdays_valid, Rph_valid)
     return time_days, Lrad_interp, Teff_interp, Rph_interp
+
+
+def tde_gaussian_cooling_env(t_day, param_dict, filters=None):
+    # first, splitting the param_dict into two parts
+    cooling_keys = [
+        "mbh", "stellar_mass", "eta", "alpha", "beta",
+        "t_0_init", "binding_energy_const", "zeta", "hoverR",
+        "z"]
+    gaussian_keys = [
+        "gaussian_mean", "gaussian_std"
+    ]
+    # Splitting the dictionary
+    param_dict_cooling = {k: v for k, v in param_dict.items() if k in cooling_keys}
+    param_dict_gaussian = {k: v for k, v in param_dict.items() if k in gaussian_keys}
+    # now handle the time
+    t_day_src = t_day / (1. + param_dict["z"])
+    # now obtain the TDE cooling envelope
+    t_cool_src, L_cool, T_cool, r_cool = cooling_envelope(t_day_src, param_dict_cooling)
+    _, _, lc_cool_mag = blackbody_constant_temperature(t_cool_src, param_dict, filters)
+    t_cool_obs = t_cool_src * (1. + param_dict["z"])
+    # now, match a gaussian peak for each of the filters
+    stiching_time = t_cool_obs[0]
+    t_gauss_obs = t_day[t_day < stiching_time]
+    if len(t_gauss_obs) > 0:
+        final_mag = {}
+        gaussian_mean = param_dict_gaussian["gaussian_mean"]
+        gaussian_std = param_dict_gaussian["gaussian_std"]
+        for filt in lc_cool_mag:
+            # get the first point
+            lc_cool_per_mag = lc_cool_mag[filt][0]
+            # convert mag to flux
+            lc_cool_Jy = np.power(10, 23. - (lc_cool_per_mag + 48.6) / 2.5)
+            # now build a gaussian to match the stiching point
+            gaussian_peak = lc_cool_Jy / np.exp(-(stiching_time - gaussian_mean)**2 / gaussian_std**2 / 2.)
+            gaussian_Jy = gaussian_peak * np.exp(-(t_gauss_obs - gaussian_mean)**2 / gaussian_std**2 / 2.)
+            # convert back to AB magnitude
+            gaussian_mag = -48.6 + -1 * np.log10(gaussian_Jy / 1e23) * 2.5
+            final_mag[filt] = np.concatenate((gaussian_mag, lc_cool_mag[filt]))
+    else:
+        final_mag = lc_cool_mag
+
+    return t_day, 1e43 * np.ones(t_day), final_mag
