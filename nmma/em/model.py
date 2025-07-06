@@ -105,6 +105,19 @@ model_parameters_dict = {
         "log10_kappa_low_vej",
         "log10_kappa_high_vej",
     ],
+    "TDE_gaussian_cooling_env": [
+        "mbh",
+        "stellar_mass",
+        "eta",
+        "alpha",
+        "beta",
+        "t_0_init",
+        "binding_energy_const",
+        "zeta",
+        "hoverR",
+        "gaussian_mean",
+        "gaussian_std"
+    ]
 }
 
 
@@ -1071,8 +1084,10 @@ class SimpleKilonovaLightCurveModel(LightCurveMixin):
 
         param_dict = {}
         for key in self.model_parameters:
-
-            param_dict[key] = new_parameters[key]
+            try:
+                param_dict[key] = new_parameters[key]
+            except KeyError:
+                continue
         param_dict["z"] = z
         param_dict["Ebv"] = Ebv
 
@@ -1089,13 +1104,13 @@ class SimpleKilonovaLightCurveModel(LightCurveMixin):
             vej_max = param_dict["vej_max"]
             vej_min = param_dict["vej_min"]
             vej_range = vej_max - vej_min
-            vej = param_dict["vej_frac"] * vej_range + vej_min 
+            vej = param_dict["vej_frac"] * vej_range + vej_min
             # calculate the temperature and luminosity to feed into the blackbody radiation calculation
             L, T, _ = utils.lightcurve_HoNa(
                 sample_times,
                 10**param_dict["log10_Mej"],
                 [param_dict["vej_min"], vej, param_dict["vej_max"]],
-                [10**param_dict["log10_kappa_low_vej"], 
+                [10**param_dict["log10_kappa_low_vej"],
                  10**param_dict["log10_kappa_high_vej"]],
                 param_dict["n"]
             )
@@ -1121,6 +1136,10 @@ class SimpleKilonovaLightCurveModel(LightCurveMixin):
             dist_mod = 5.0 * np.log10(new_parameters["luminosity_distance"] * 1e6 / 10)
             for filt in mag.keys():
                 mag[filt] -= dist_mod
+        elif self.model == 'TDE_gaussian_cooling_env':
+            _, lbol, mag = utils.tde_gaussian_cooling_env(
+                sample_times, param_dict, filters=self.filters
+            )
 
         return lbol, mag
 
